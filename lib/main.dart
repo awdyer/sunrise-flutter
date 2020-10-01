@@ -38,41 +38,70 @@ class ProductPage extends StatefulWidget {
 }
 
 class _ProductPageState extends State<ProductPage> {
-  Future<List<Product>> futureProducts;
+  final _products = <Product>[];
+  var _isLoading = true;
+  var _hasMore = true;
+  final _productSearcher = ProductSearcher();
 
   @override
   void initState() {
     super.initState();
-    futureProducts = searchProducts();
+    _isLoading = true;
+    _hasMore = true;
+    _loadMoreProducts();
+  }
+
+  void _loadMoreProducts() async {
+    if (!_hasMore) {
+      return;
+    }
+
+    _isLoading = true;
+    final newProducts = await _productSearcher.searchProducts();
+    if (newProducts.isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _hasMore = false;
+      });
+    } else {
+      setState(() {
+        _isLoading = false;
+        _products.addAll(newProducts);
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Welcome to Sunrise'),
-      ),
-      backgroundColor: Colors.white,
-      body: FutureBuilder<List<Product>>(
-          future: futureProducts,
-          builder: (context, snapshot) {
-            if (snapshot.hasData) {
-              return GridView.count(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 30.0,
-                  crossAxisSpacing: 4.0,
-                  padding: EdgeInsets.all(10.0),
-                  children: snapshot.data
-                      .map<Widget>(
-                          (Product product) => ProductItem(product: product))
-                      .toList());
-            } else if (snapshot.hasError) {
-              return Text("${snapshot.error}");
-            }
-
-            return Center(child: CircularProgressIndicator());
-          }),
-    );
+        appBar: AppBar(
+          title: Text('Welcome to Sunrise'),
+        ),
+        backgroundColor: Colors.white,
+        body: GridView.builder(
+            itemCount: _hasMore ? _products.length + 1 : _products.length,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              mainAxisSpacing: 30.0,
+              crossAxisSpacing: 4.0,
+            ),
+            padding: EdgeInsets.all(10.0),
+            itemBuilder: (BuildContext context, int index) {
+              // print('GridView.builder is building index $index');
+              if (index >= _products.length) {
+                if (!_isLoading) {
+                  _loadMoreProducts();
+                }
+                return Center(
+                  child: SizedBox(
+                    child: CircularProgressIndicator(),
+                    height: 24,
+                    width: 24,
+                  ),
+                );
+              }
+              return ProductItem(product: _products[index]);
+            }));
   }
 }
 
@@ -123,15 +152,35 @@ class Product {
   final String imageUrl;
 }
 
-Future<List<Product>> searchProducts() async {
-  final response = await ctApi.get(ProjectKey, '/product-projections/search');
+class ProductSearcher {
+  var _limit = 20;
+  var _currentOffset = 0;
+  var _hasMore = true;
 
-  if (response.statusCode != 200) {
-    log(response.body);
-    throw Exception('failed to fetch products');
+  Future<List<Product>> searchProducts() async {
+    if (!_hasMore) {
+      return <Product>[];
+    }
+
+    print('limit: $_limit, offset: $_currentOffset');
+    final response = await ctApi.get(ProjectKey, '/product-projections/search', queryParameters: {
+      'limit': _limit.toString(),
+      'offset': _currentOffset.toString(),
+    });
+
+    if (response.statusCode != 200) {
+      log(response.body);
+      throw Exception('failed to fetch products');
+    }
+
+    final results = json.decode(response.body);
+    if (results['count'] < _limit) {
+      _hasMore = false;
+    }
+    _currentOffset += _limit;
+
+    return parseProducts(results);
   }
-
-  return parseProducts(json.decode(response.body));
 }
 
 List<Product> parseProducts(Map<String, dynamic> json) {
