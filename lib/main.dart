@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:transparent_image/transparent_image.dart';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:math' as math;
@@ -86,7 +87,20 @@ class ProductItem extends StatelessWidget {
       alignment: Alignment.topLeft,
       child: Column(
         children: [
-          Expanded(child: Image.network(product.imageUrl)),
+          Expanded(
+              child: FadeInImage(
+            fadeInDuration: Duration(milliseconds: 200),
+            placeholder: MemoryImage(kTransparentImage),
+            image: NetworkImage(product.imageUrl),
+            imageErrorBuilder: (BuildContext context, Object exception,
+                StackTrace stackTrace) {
+              return Container(
+                width: 100.0,
+                height: 100.0,
+                child: Text('image not found'),
+              );
+            },
+          )),
           SizedBox(height: 10),
           Text(product.name),
           SizedBox(height: 5),
