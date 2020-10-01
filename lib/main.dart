@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:developer';
-import 'dart:io';
 import 'dart:math' as math;
+
 import 'config.dart' as config;
+import 'ct.dart' as ct;
 
-const CtApiBaseUrl = '${config.CtApiUrl}/${config.CtProjectKey}';
-
+const ProjectKey = config.CtProjectKey;
 const CountryCode = 'DE';
 const CurrencyCode = 'EUR';
+
+final ctApi = ct.Api(
+  clientId: config.CtClientId,
+  clientSecret: config.CtClientSecret,
+  apiUrl: ct.GcpEuApiUrl,
+  authUrl: ct.GcpEuAuthUrl,
+);
 
 void main() => runApp(SunriseApp());
 
@@ -36,7 +42,7 @@ class _ProductPageState extends State<ProductPage> {
   @override
   void initState() {
     super.initState();
-    futureProducts = fetchProducts();
+    futureProducts = searchProducts();
   }
 
   @override
@@ -96,29 +102,22 @@ class ProductItem extends StatelessWidget {
 }
 
 class Product {
-  const Product({this.name, this.price, this.imageUrl});
+  Product({this.name, this.price, this.imageUrl});
 
   final String name;
   final String price;
   final String imageUrl;
 }
 
-Future<http.Response> ctApiRequest(String urlPath) {
-  return http.get(
-    '$CtApiBaseUrl$urlPath',
-    headers: {HttpHeaders.authorizationHeader: 'Bearer ${config.CtAccessToken}'},
-  );
-}
+Future<List<Product>> searchProducts() async {
+  final response = await ctApi.get(ProjectKey, '/product-projections/search');
 
-Future<List<Product>> fetchProducts() async {
-  final response = await ctApiRequest('/product-projections/search');
-
-  if (response.statusCode == 200) {
-    return parseProducts(json.decode(response.body));
-  } else {
+  if (response.statusCode != 200) {
     log(response.body);
     throw Exception('failed to fetch products');
   }
+
+  return parseProducts(json.decode(response.body));
 }
 
 List<Product> parseProducts(Map<String, dynamic> json) {
