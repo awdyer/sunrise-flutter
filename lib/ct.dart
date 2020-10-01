@@ -17,11 +17,11 @@ class Api {
   Api({this.clientId, this.clientSecret, this.apiUrl, this.authUrl});
 
   Future<http.Response> get(project, path, {queryParameters}) async {
-    await this._refreshAccessToken();
-    final uri = Uri.parse('${this.apiUrl}/$project$path')
+    await _refreshAccessToken();
+    final uri = Uri.parse('$apiUrl/$project$path')
         .replace(queryParameters: queryParameters ?? {});
     final headers = {
-      HttpHeaders.authorizationHeader: 'Bearer ${this._accessToken}',
+      HttpHeaders.authorizationHeader: 'Bearer $_accessToken',
     };
     return http.get(uri, headers: headers);
   }
@@ -29,12 +29,12 @@ class Api {
   Future _refreshAccessToken() async {
     final now = DateTime.now();
 
-    if (this._accessTokenExpiryTime != null &&
-        now.isBefore(this._accessTokenExpiryTime)) {
+    if (_accessTokenExpiryTime != null &&
+        now.isBefore(_accessTokenExpiryTime)) {
       return;
     }
 
-    final response = await this._fetchAccessToken();
+    final response = await _fetchAccessToken();
     if (response.statusCode != 200) {
       log(response.body);
       throw ApiException('Failed to get token.');
@@ -44,16 +44,16 @@ class Api {
     final accessToken = body['access_token'];
     final expiresIn = body['expires_in'];
 
-    this._accessToken = accessToken;
-    this._accessTokenExpiryTime = now.add(Duration(seconds: expiresIn));
+    _accessToken = accessToken;
+    _accessTokenExpiryTime = now.add(Duration(seconds: expiresIn));
   }
 
   Future<http.Response> _fetchAccessToken() {
     final params = {'grant_type': 'client_credentials'};
-    final uri = Uri.parse('${this.authUrl}/oauth/token')
+    final uri = Uri.parse('$authUrl/oauth/token')
         .replace(queryParameters: params);
     final token =
-        base64Encode(utf8.encode('${this.clientId}:${this.clientSecret}'));
+        base64Encode(utf8.encode('$clientId:$clientSecret'));
     final headers = {HttpHeaders.authorizationHeader: 'Basic $token'};
     return http.post(uri, headers: headers);
   }
