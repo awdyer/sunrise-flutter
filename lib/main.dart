@@ -1,8 +1,12 @@
-import 'package:flutter/material.dart';
-import 'package:transparent_image/transparent_image.dart';
 import 'dart:convert';
 import 'dart:developer';
+import 'dart:io';
 import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+import 'package:transparent_image/transparent_image.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 
 import 'config.dart' as config;
 import 'ct.dart' as ct;
@@ -14,8 +18,9 @@ const CurrencyCode = 'EUR';
 final ctApi = ct.Api(
   clientId: config.CtClientId,
   clientSecret: config.CtClientSecret,
-  apiUrl: ct.GcpEuApiUrl,
   authUrl: ct.GcpEuAuthUrl,
+  apiUrl: ct.GcpEuApiUrl,
+  mlApiUrl: ct.GcpEuMlApiUrl,
 );
 
 void main() => runApp(SunriseApp());
@@ -25,8 +30,160 @@ class SunriseApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'CT Sunrise',
-      home: ProductPage(),
+      home: ImageSearchPage(),
     );
+  }
+}
+
+class ImageSearchPage extends StatefulWidget {
+  ImageSearchPage({Key key}) : super(key: key);
+
+  @override
+  _ImageSearchPageState createState() => _ImageSearchPageState();
+}
+
+class _ImageSearchPageState extends State<ImageSearchPage> {
+  File _image;
+  final _imagePicker = ImagePicker();
+
+  SimilarImageSearcher _productSearcher;
+  final _products = <Product>[];
+  var _isLoading = false;
+  var _hasMore = false;
+
+  void _initSearcher(PlatformFile image) {
+    _productSearcher = SimilarImageSearcher(image);
+    setState(() {
+      _isLoading = true;
+      _hasMore = true;
+      _products.clear();
+    });
+    _loadMoreProducts();
+  }
+
+  void _loadMoreProducts() async {
+    if (!_hasMore) {
+      return;
+    }
+
+    _isLoading = true;
+    final newProducts = await _productSearcher.searchProducts();
+    if (newProducts.isEmpty) {
+      setState(() {
+        _isLoading = false;
+        _hasMore = false;
+      });
+    } else {
+      setState(() {
+        _isLoading = false;
+        _products.addAll(newProducts);
+      });
+    }
+  }
+
+  Future<void> _getImageFromGallery() async {
+    // final pickedFile = await _picker.getImage(source: ImageSource.gallery);
+    final result = await FilePicker.platform
+        .pickFiles(type: FileType.image, withData: true);
+
+    if (result != null) {
+      final pickedFile = result.files.first;
+      print(pickedFile.path);
+      setState(() {
+        _image = File(pickedFile.path);
+      });
+      _initSearcher(pickedFile);
+    } else {
+      print('no image selected');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+        appBar: AppBar(
+          title: Text('Image Search'),
+        ),
+        backgroundColor: Colors.white,
+        body: Container(
+            padding: EdgeInsets.all(10),
+            child: Column(children: [
+              Row(
+                children: [
+                  Column(children: [
+                    Container(
+                        width: 100,
+                        height: 100,
+                        color: Colors.grey,
+                        child: _image == null
+                            ? Center(
+                                child: Text(
+                                'no image selected',
+                                textAlign: TextAlign.center,
+                              ))
+                            : FittedBox(
+                                child: Image.file(_image),
+                                fit: BoxFit.fill,
+                              ))
+                  ]),
+                  Column(children: [
+                    Container(
+                        padding: EdgeInsets.all(10),
+                        child: Column(children: [
+                          Row(children: [Text('Choose an image:')]),
+                          Row(
+                            children: [
+                              // Column(children: [
+                              IconButton(
+                                  icon: Icon(Icons.photo, size: 50),
+                                  onPressed: _getImageFromGallery),
+                              // ]),
+                              // Column(children: [
+                              IconButton(
+                                  icon: Icon(Icons.camera_alt, size: 50),
+                                  onPressed: null),
+                              // ]),
+                            ],
+                          )
+                        ]))
+                  ]),
+                ],
+              ),
+              Row(children: [
+                Column(children: [
+                  SizedBox(
+                      height: 400,
+                      width: 350,
+                      child: GridView.builder(
+                          itemCount: _hasMore
+                              ? _products.length + 1
+                              : _products.length,
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            mainAxisSpacing: 30.0,
+                            crossAxisSpacing: 4.0,
+                          ),
+                          padding: EdgeInsets.all(10.0),
+                          itemBuilder: (BuildContext context, int index) {
+                            // print('GridView.builder is building index $index');
+                            if (index >= _products.length) {
+                              if (!_isLoading) {
+                                _loadMoreProducts();
+                              }
+                              return Center(
+                                child: SizedBox(
+                                  child: CircularProgressIndicator(),
+                                  height: 24,
+                                  width: 24,
+                                ),
+                              );
+                            }
+                            return ProductItem(product: _products[index]);
+                          }))
+                ])
+              ])
+            ])));
   }
 }
 
@@ -133,11 +290,11 @@ class ProductItem extends StatelessWidget {
           SizedBox(height: 10),
           Text(product.name),
           SizedBox(height: 5),
-          Text(product.price,
-              style: TextStyle(
-                color: Colors.red,
-                fontWeight: FontWeight.bold,
-              )),
+          // Text(product.price,
+          //     style: TextStyle(
+          //       color: Colors.red,
+          //       fontWeight: FontWeight.bold,
+          //     )),
         ],
       ),
     );
@@ -163,7 +320,8 @@ class ProductSearcher {
     }
 
     print('limit: $_limit, offset: $_currentOffset');
-    final response = await ctApi.get(ProjectKey, '/product-projections/search', queryParameters: {
+    final response = await ctApi
+        .get(ProjectKey, '/product-projections/search', queryParameters: {
       'limit': _limit.toString(),
       'offset': _currentOffset.toString(),
     });
@@ -180,6 +338,54 @@ class ProductSearcher {
     _currentOffset += _limit;
 
     return parseProducts(results);
+  }
+}
+
+class SimilarImageSearcher {
+  var _limit = 20;
+  var _currentOffset = 0;
+  var _hasMore = true;
+  final PlatformFile imageFile;
+
+  SimilarImageSearcher(this.imageFile);
+
+  Future<List<Product>> searchProducts() async {
+    if (!_hasMore) {
+      return <Product>[];
+    }
+
+    print('limit: $_limit, offset: $_currentOffset');
+    final imageBytes = imageFile.bytes; // await imageFile.readAsBytes();
+    final headers = {
+      HttpHeaders.contentTypeHeader: 'image/${imageFile.extension}'
+    };
+    final queryParameters = {
+      'limit': _limit.toString(),
+      'offset': _currentOffset.toString(),
+    };
+    final response = await ctApi.postMl(ProjectKey, '/image-search', imageBytes,
+        headers: headers, queryParameters: queryParameters);
+
+    if (response.statusCode != 200) {
+      log(response.body);
+      throw Exception('failed to fetch products');
+    }
+
+    print(response.body);
+    final results = json.decode(response.body);
+    if (results['count'] < _limit) {
+      _hasMore = false;
+    }
+    _currentOffset += _limit;
+
+    // TODO fetch list of products
+    return List<Product>.from(results['results'].map((result) {
+      final String name =
+          result['productVariants'][0]['product']['id'].substring(0, 8);
+      final String imageUrl = result['imageUrl'];
+      final String price = '??';
+      return Product(name: name, price: price, imageUrl: imageUrl);
+    }));
   }
 }
 

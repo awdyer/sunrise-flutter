@@ -1,29 +1,58 @@
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 
-const GcpEuApiUrl = 'https://api.europe-west1.gcp.commercetools.com';
+import 'package:http/http.dart' as http;
+
 const GcpEuAuthUrl = 'https://auth.europe-west1.gcp.commercetools.com';
+const GcpEuApiUrl = 'https://api.europe-west1.gcp.commercetools.com';
+const GcpEuMlApiUrl = 'https://ml-eu.europe-west1.gcp.commercetools.com';
 
 class Api {
   final String clientId;
   final String clientSecret;
-  final String apiUrl;
   final String authUrl;
+  final String apiUrl;
+  final String mlApiUrl;
   String _accessToken;
   DateTime _accessTokenExpiryTime;
 
-  Api({this.clientId, this.clientSecret, this.apiUrl, this.authUrl});
+  Api(
+      {this.clientId,
+      this.clientSecret,
+      this.authUrl,
+      this.apiUrl,
+      this.mlApiUrl});
 
-  Future<http.Response> get(project, path, {queryParameters}) async {
+  Future<http.Response> get(String project, String path,
+      {Map<String, dynamic> queryParameters,
+      Map<String, String> headers}) async {
     await _refreshAccessToken();
-    final uri = Uri.parse('$apiUrl/$project$path')
+    final uri = _buildUri(project, path, queryParameters);
+    headers = _buildHeaders(headers);
+    return http.get(uri, headers: headers);
+  }
+
+  Future<http.Response> postMl(String project, String path, dynamic body,
+      {Map<String, dynamic> queryParameters,
+      Map<String, String> headers}) async {
+    await _refreshAccessToken();
+    final uri = _buildUri(project, path, queryParameters);
+    headers = _buildHeaders(headers);
+    return http.post(uri, headers: headers, body: body);
+  }
+
+  Uri _buildUri(
+      String project, String path, Map<String, dynamic> queryParameters) {
+    return Uri.parse('$mlApiUrl/$project$path')
         .replace(queryParameters: queryParameters ?? {});
-    final headers = {
+  }
+
+  Map<String, String> _buildHeaders(Map<String, String> headers) {
+    return {
+      ...?headers,
       HttpHeaders.authorizationHeader: 'Bearer $_accessToken',
     };
-    return http.get(uri, headers: headers);
   }
 
   Future _refreshAccessToken() async {
@@ -50,10 +79,9 @@ class Api {
 
   Future<http.Response> _fetchAccessToken() {
     final params = {'grant_type': 'client_credentials'};
-    final uri = Uri.parse('$authUrl/oauth/token')
-        .replace(queryParameters: params);
-    final token =
-        base64Encode(utf8.encode('$clientId:$clientSecret'));
+    final uri =
+        Uri.parse('$authUrl/oauth/token').replace(queryParameters: params);
+    final token = base64Encode(utf8.encode('$clientId:$clientSecret'));
     final headers = {HttpHeaders.authorizationHeader: 'Basic $token'};
     return http.post(uri, headers: headers);
   }
